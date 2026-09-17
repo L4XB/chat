@@ -497,16 +497,20 @@ export class Chat<
       return;
     }
 
-    // Avoid concurrent initialization. A failed attempt is forgotten so the
+    // Avoid concurrent initialization. A failed state connection is forgotten so the
     // next caller retries once the dependency (e.g. Redis) has recovered,
     // instead of every later webhook rejecting with the first error (#922).
     if (!this.initPromise) {
-      const attempt = this.doInitialize().catch((error: unknown) => {
-        if (this.initPromise === attempt) {
-          this.initPromise = null;
-        }
-        throw error;
-      });
+      this.logger.info("Initializing chat instance...");
+      const attempt = this._stateAdapter
+        .connect()
+        .catch((error: unknown) => {
+          if (this.initPromise === attempt) {
+            this.initPromise = null;
+          }
+          throw error;
+        })
+        .then(() => this.doInitialize());
       this.initPromise = attempt;
     }
 
@@ -514,8 +518,6 @@ export class Chat<
   }
 
   private async doInitialize(): Promise<void> {
-    this.logger.info("Initializing chat instance...");
-    await this._stateAdapter.connect();
     this.logger.debug("State connected");
 
     const initPromises = Array.from(this.adapters.values()).map(
